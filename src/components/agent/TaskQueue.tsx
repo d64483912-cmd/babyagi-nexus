@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Task {
   id: string;
   description: string;
   priority: number;
   status: "pending" | "running" | "completed" | "failed";
-  created: Date;
+  created_at: string | null;
 }
 
 interface TaskQueueProps {
@@ -20,25 +21,31 @@ interface TaskQueueProps {
 
 export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
   const { toast } = useToast();
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: "1",
-      description: "Analyze market trends for Q1 2025",
-      priority: 1,
-      status: "pending",
-      created: new Date(),
-    },
-    {
-      id: "2",
-      description: "Generate comprehensive report on AI developments",
-      priority: 2,
-      status: "pending",
-      created: new Date(),
-    },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskDesc, setNewTaskDesc] = useState("");
 
-  const addTask = () => {
+  const loadTasks = async () => {
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("*")
+      .order("priority", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Failed to load tasks",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+    setTasks(data as Task[]);
+  };
+
+  useEffect(() => {
+    loadTasks();
+  }, []);
+
+  const addTask = async () => {
     if (!newTaskDesc.trim()) {
       toast({
         title: "Error",
@@ -48,31 +55,51 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
       return;
     }
 
-    const newTask: Task = {
-      id: Date.now().toString(),
-      description: newTaskDesc,
-      priority: tasks.length + 1,
-      status: "pending",
-      created: new Date(),
-    };
+    const nextPriority = (tasks[tasks.length - 1]?.priority ?? 0) + 1;
 
-    setTasks([...tasks, newTask]);
+    const { error } = await supabase.from("tasks").insert({
+      id: crypto.randomUUID(),
+      description: newTaskDesc.trim(),
+      priority: nextPriority,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      toast({
+        title: "Failed to add task",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setNewTaskDesc("");
     toast({
       title: "Task Added",
       description: "New task has been added to the queue",
     });
+    await loadTasks();
   };
 
-  const deleteTask = (id: string) => {
-    setTasks(tasks.filter((t) => t.id !== id));
+  const deleteTask = async (id: string) => {
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
+    if (error) {
+      toast({
+        title: "Failed to delete task",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
     toast({
       title: "Task Deleted",
       description: "Task has been removed from the queue",
     });
+    await loadTasks();
   };
 
-  const movePriority = (id: string, direction: "up" | "down") => {
+  const movePriority = async (id: string, direction: "up" | "down") => {
     const index = tasks.findIndex((t) => t.id === id);
     if (index === -1) return;
 
@@ -83,10 +110,16 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
     const targetIndex = direction === "up" ? index - 1 : index + 1;
     [newTasks[index], newTasks[targetIndex]] = [newTasks[targetIndex], newTasks[index]];
 
-    // Update priorities
+    // Update priorities locally
     newTasks.forEach((task, idx) => {
       task.priority = idx + 1;
     });
+
+    // Persist reordering
+    const updates = newTasks.map((t) => ({ id: t.id, priority: t.priority }));
+    for (const upd of updates) {
+      await supabase.from("tasks").update({ priority: upd.priority }).eq("id", upd.id);
+    }
 
     setTasks(newTasks);
   };
@@ -170,7 +203,7 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
                   </div>
                   <p className="text-sm text-foreground">{task.description}</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Created: {task.created.toLocaleString()}
+                    Created: {task.created_at ? new Date(task.created_at).toLocaleString() : "—"}
                   </p>
                 </div>
 
