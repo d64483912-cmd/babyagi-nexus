@@ -1,1 +1,7 @@
 project_id = "bnjthwrpigvchbhsmfec"
+
+[functions.discover-models]
+verify_jwt = false
+
+[functions.execute-agent]
+verify_jwt = true

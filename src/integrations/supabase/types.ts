@@ -92,6 +92,93 @@ export type Database = {
           },
         ]
       }
+      agent_logs: {
+        Row: {
+          agent_id: string | null
+          created_at: string | null
+          id: string
+          level: string
+          message: string
+          metadata: Json | null
+          task_id: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string | null
+          id?: string
+          level: string
+          message: string
+          metadata?: Json | null
+          task_id?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string | null
+          id?: string
+          level?: string
+          message?: string
+          metadata?: Json | null
+          task_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_logs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_logs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agents: {
+        Row: {
+          completed_at: string | null
+          config: Json | null
+          created_at: string | null
+          id: string
+          metrics: Json | null
+          name: string
+          objective: string
+          started_at: string | null
+          status: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          config?: Json | null
+          created_at?: string | null
+          id?: string
+          metrics?: Json | null
+          name: string
+          objective: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          config?: Json | null
+          created_at?: string | null
+          id?: string
+          metrics?: Json | null
+          name?: string
+          objective?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       alert_rules: {
         Row: {
           created_at: string | null
@@ -1417,6 +1504,41 @@ export type Database = {
           },
         ]
       }
+      memories: {
+        Row: {
+          agent_id: string | null
+          content: string
+          created_at: string | null
+          embedding: string | null
+          id: string
+          metadata: Json | null
+        }
+        Insert: {
+          agent_id?: string | null
+          content: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          metadata?: Json | null
+        }
+        Update: {
+          agent_id?: string | null
+          content?: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memories_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           confidence_score: number | null
@@ -1641,6 +1763,39 @@ export type Database = {
           },
         ]
       }
+      plugins: {
+        Row: {
+          category: string
+          config: Json | null
+          created_at: string | null
+          description: string | null
+          enabled: boolean | null
+          id: string
+          name: string
+          version: string
+        }
+        Insert: {
+          category: string
+          config?: Json | null
+          created_at?: string | null
+          description?: string | null
+          enabled?: boolean | null
+          id?: string
+          name: string
+          version: string
+        }
+        Update: {
+          category?: string
+          config?: Json | null
+          created_at?: string | null
+          description?: string | null
+          enabled?: boolean | null
+          id?: string
+          name?: string
+          version?: string
+        }
+        Relationships: []
+      }
       queries: {
         Row: {
           answer: string | null
@@ -1828,6 +1983,56 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: []
+      }
+      tasks: {
+        Row: {
+          agent_id: string | null
+          completed_at: string | null
+          created_at: string | null
+          description: string
+          error: string | null
+          id: string
+          metadata: Json | null
+          priority: number
+          result: string | null
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          agent_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          description: string
+          error?: string | null
+          id?: string
+          metadata?: Json | null
+          priority?: number
+          result?: string | null
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          agent_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          description?: string
+          error?: string | null
+          id?: string
+          metadata?: Json | null
+          priority?: number
+          result?: string | null
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_preferences: {
         Row: {
