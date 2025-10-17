@@ -3,9 +3,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
+import { Plus, Trash2, ArrowUp, ArrowDown, Play, RotateCcw, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { agentEngine } from "@/lib/agentEngine";
 
 interface Task {
   id: string;
@@ -13,6 +15,8 @@ interface Task {
   priority: number;
   status: "pending" | "running" | "completed" | "failed";
   created_at: string | null;
+  result?: string | null;
+  error?: string | null;
 }
 
 interface TaskQueueProps {
@@ -23,6 +27,7 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
   const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskDesc, setNewTaskDesc] = useState("");
+  const [viewTask, setViewTask] = useState<Task | null>(null);
 
   const loadTasks = async () => {
     const { data, error } = await supabase
@@ -43,6 +48,20 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
 
   useEffect(() => {
     loadTasks();
+
+    // Subscribe to real-time changes from the tasks table
+    const channel = supabase
+      .channel("public:tasks")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tasks" },
+        () => loadTasks()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const addTask = async () => {
@@ -122,6 +141,54 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
     }
 
     setTasks(newTasks);
+  };
+
+  const runNow = async (id: string) => {
+    // Set task to highest priority and pending, then start the engine if not running
+    const { error } = await supabase
+      .from("tasks")
+      .update({ status: "pending", priority: 1 })
+      .eq("id", id);
+
+    if (error) {
+      toast({
+        title: "Failed to schedule task",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Scheduled",
+      description: "Task set to highest priority. Engine will process next.",
+    });
+
+    if (!agentEngine.isRunning() && isRunning) {
+      // The UI indicates agent should be running; start engine to process immediately
+      agentEngine.start();
+    }
+  };
+
+  const retryTask = async (id: string) => {
+    const { error } = await supabase
+      .from("tasks")
+      .update({ status: "pending", error: null })
+      .eq("id", id);
+
+    if (error) {
+      toast({
+        title: "Retry failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Retry scheduled",
+      description: "Task moved back to pending.",
+    });
   };
 
   const getStatusColor = (status: Task["status"]) => {
@@ -207,14 +274,68 @@ export const TaskQueue = ({ isRunning }: TaskQueueProps) => {
                   </p>
                 </div>
 
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => deleteTask(task.id)}
-                  className="text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => runNow(task.id)}
+                    className="gap-1"
+                  >
+                    <Play className="w-4 h-4" />
+                    Run
+                  </Button>
+                  {task.status === "failed" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => retryTask(task.id)}
+                      className="gap-1"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Retry
+                    </Button>
+                  )}
+                  <Dialog open={viewTask?.id === task.id} onOpenChange={(open) => setViewTask(open ? task : null)}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="ghost" className="gap-1">
+                        <Eye className="w-4 h-4" />
+                        View
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Task Result</DialogTitle>
+                        <DialogDescription className="text-xs">
+                          {task.description}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Status</div>
+                          <Badge className={`text-xs ${getStatusColor(task.status)}`}>{task.status}</Badge>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Result</div>
+                          <div className="text-sm whitespace-pre-wrap">{task.result ?? "No result yet."}</div>
+                        </div>
+                        {task.error && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Error</div>
+                            <div className="text-sm text-destructive whitespace-pre-wrap">{task.error}</div>
+                          </div>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => deleteTask(task.id)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             ))
           )}

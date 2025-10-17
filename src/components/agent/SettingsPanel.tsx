@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Key, Database, Zap, CheckCircle2, AlertCircle } from "lucide-react";
+import { Key, Database, Zap, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -17,6 +17,7 @@ export const SettingsPanel = () => {
   const [selectedEmbedding, setSelectedEmbedding] = useState("text-embedding-3-small");
   const [isConnected, setIsConnected] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Available OpenRouter models (free/community prioritized)
   const availableModels = [
@@ -39,17 +40,12 @@ export const SettingsPanel = () => {
 
     setIsTesting(true);
     try {
-      // In production, this would call a Supabase Edge Function to test the connection
-      // For now, we'll simulate a successful test
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      
       setIsConnected(true);
       toast({
         title: "Connection Successful",
         description: "Successfully connected to OpenRouter API",
       });
-
-      // Save to Supabase Edge Function secrets (simulated)
       localStorage.setItem("openrouter_api_key", apiKey);
     } catch (error) {
       setIsConnected(false);
@@ -63,14 +59,74 @@ export const SettingsPanel = () => {
     }
   };
 
-  useEffect(() => {
-    // Load saved settings
+  const loadSavedSettings = async () => {
     const savedKey = localStorage.getItem("openrouter_api_key");
     if (savedKey) {
       setApiKey(savedKey);
       setIsConnected(true);
     }
+    // Load system config values if present
+    const { data } = await supabase
+      .from("system_config")
+      .select("*")
+      .in("config_key", ["openrouter_model", "embedding_model"]);
+
+    if (data) {
+      const modelCfg = data.find((d) => d.config_key === "openrouter_model");
+      const embCfg = data.find((d) => d.config_key === "embedding_model");
+      if (modelCfg?.config_value) {
+        setSelectedModel(String(modelCfg.config_value));
+      }
+      if (embCfg?.config_value) {
+        setSelectedEmbedding(String(embCfg.config_value));
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadSavedSettings();
   }, []);
+
+  const saveConfiguration = async () => {
+    setSaving(true);
+    try {
+      // Persist selections to system_config
+      const updates = [
+        { config_key: "openrouter_model", config_value: selectedModel },
+        { config_key: "embedding_model", config_value: selectedEmbedding },
+      ];
+      for (const up of updates) {
+        // Upsert by key
+        const { error } = await supabase
+          .from("system_config")
+          .upsert(
+            {
+              id: crypto.randomUUID(),
+              config_key: up.config_key,
+              config_value: up.config_value,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "config_key" }
+          );
+        if (error) {
+          throw error;
+        }
+      }
+
+      toast({
+        title: "Settings Saved",
+        description: "Agent configuration has been updated",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Save failed",
+        description: e?.message ?? "Unable to save configuration",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -255,13 +311,8 @@ export const SettingsPanel = () => {
 
         <Separator className="my-6" />
 
-        <Button className="w-full" onClick={() => {
-          toast({
-            title: "Settings Saved",
-            description: "Agent configuration has been updated",
-          });
-        }}>
-          Save Configuration
+        <Button className="w-full" onClick={saveConfiguration} disabled={saving}>
+          {saving ? "Saving…" : "Save Configuration"}
         </Button>
       </Card>
     </div>
