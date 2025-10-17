@@ -1,53 +1,22 @@
-import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Activity, CheckCircle2, Clock, Zap } from "lucide-react";
+import { useAgentEngine } from "@/lib/agentEngine";
 
 interface AgentDashboardProps {
   isRunning: boolean;
 }
 
 export const AgentDashboard = ({ isRunning }: AgentDashboardProps) => {
-  const [stats, setStats] = useState({
-    tasksCompleted: 0,
-    tasksInProgress: 0,
-    tasksPending: 0,
-    successRate: 0,
-  });
+  const { running, stats, recentActivities, start, stop } = useAgentEngine();
 
-  const [recentActivities, setRecentActivities] = useState<Array<{
-    id: string;
-    action: string;
-    timestamp: Date;
-    status: "success" | "running" | "pending";
-  }>>([]);
-
-  useEffect(() => {
-    // Simulated stats update
-    if (isRunning) {
-      const interval = setInterval(() => {
-        setStats(prev => ({
-          tasksCompleted: prev.tasksCompleted + Math.floor(Math.random() * 2),
-          tasksInProgress: Math.floor(Math.random() * 5),
-          tasksPending: Math.floor(Math.random() * 10),
-          successRate: 85 + Math.floor(Math.random() * 15),
-        }));
-
-        setRecentActivities(prev => [
-          {
-            id: Date.now().toString(),
-            action: `Task executed: ${['Web Search', 'Data Processing', 'API Call', 'Analysis'][Math.floor(Math.random() * 4)]}`,
-            timestamp: new Date(),
-            status: ['success', 'running', 'pending'][Math.floor(Math.random() * 3)] as any,
-          },
-          ...prev.slice(0, 9),
-        ]);
-      }, 3000);
-
-      return () => clearInterval(interval);
-    }
-  }, [isRunning]);
+  // Sync engine with parent control
+  if (isRunning && !running) {
+    start();
+  } else if (!isRunning && running) {
+    stop();
+  }
 
   return (
     <div className="space-y-6">

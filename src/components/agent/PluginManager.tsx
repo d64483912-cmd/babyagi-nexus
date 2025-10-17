@@ -1,77 +1,107 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Search, Database, Globe, Code, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+type Category = "search" | "database" | "api" | "utility";
 
 interface Plugin {
   id: string;
   name: string;
-  description: string;
-  icon: any;
-  enabled: boolean;
+  description: string | null;
+  enabled: boolean | null;
   version: string;
-  category: "search" | "database" | "api" | "utility";
+  category: Category;
 }
+
+const categoryIcon: Record<Category, any> = {
+  search: Search,
+  database: Database,
+  api: Globe,
+  utility: Code,
+};
 
 export const PluginManager = () => {
   const { toast } = useToast();
-  const [plugins, setPlugins] = useState<Plugin[]>([
-    {
-      id: "web-search",
-      name: "Web Search",
-      description: "Search the web using OpenRouter-powered search APIs. Enables agent to find real-time information.",
-      icon: Search,
-      enabled: true,
-      version: "1.0.0",
-      category: "search",
-    },
-    {
-      id: "postgres-db",
-      name: "PostgreSQL Database",
-      description: "Direct access to Supabase PostgreSQL database for persistent data storage and retrieval.",
-      icon: Database,
-      enabled: true,
-      version: "1.0.0",
-      category: "database",
-    },
-    {
-      id: "http-api",
-      name: "HTTP API Client",
-      description: "Make HTTP requests to external APIs. Supports REST, GraphQL, and webhooks.",
-      icon: Globe,
-      enabled: true,
-      version: "1.0.0",
-      category: "api",
-    },
-    {
-      id: "code-executor",
-      name: "Code Executor",
-      description: "Execute sandboxed JavaScript/TypeScript code snippets for data processing and transformations.",
-      icon: Code,
-      enabled: false,
-      version: "0.9.0",
-      category: "utility",
-    },
-  ]);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const togglePlugin = (id: string) => {
-    setPlugins(
-      plugins.map((plugin) =>
-        plugin.id === id ? { ...plugin, enabled: !plugin.enabled } : plugin
-      )
-    );
-    
-    const plugin = plugins.find((p) => p.id === id);
-    toast({
-      title: plugin?.enabled ? "Plugin Disabled" : "Plugin Enabled",
-      description: `${plugin?.name} has been ${plugin?.enabled ? "disabled" : "enabled"}`,
-    });
+  const loadPlugins = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("plugins")
+      .select("*")
+      .order("name", { ascending: true });
+
+    setLoading(false);
+    if (error) {
+      toast({
+        title: "Failed to load plugins",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Ensure category is one of expected values; default to utility
+    const normalized = (data || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      enabled: p.enabled,
+      version: p.version,
+      category: (["search", "database", "api", "utility"].includes(p.category) ? p.category : "utility") as Category,
+    }));
+    setPlugins(normalized);
   };
 
-  const getCategoryColor = (category: Plugin["category"]) => {
+  useEffect(() => {
+    loadPlugins();
+    // Optional: subscribe to realtime plugin changes
+    const channel = supabase
+      .channel("public:plugins")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "plugins" },
+        () => loadPlugins()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const togglePlugin = async (id: string) => {
+    const plugin = plugins.find((p) => p.id === id);
+    if (!plugin) return;
+
+    const newEnabled = !(plugin.enabled ?? false);
+    const { error } = await supabase
+      .from("plugins")
+      .update({ enabled: newEnabled })
+      .eq("id", id);
+
+    if (error) {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: newEnabled ? "Plugin Enabled" : "Plugin Disabled",
+      description: `${plugin.name} has been ${newEnabled ? "enabled" : "disabled"}`,
+    });
+    await loadPlugins();
+  };
+
+  const getCategoryColor = (category: Category) => {
     switch (category) {
       case "search":
         return "bg-blue-500/10 text-blue-500";
@@ -84,6 +114,8 @@ export const PluginManager = () => {
     }
   };
 
+  const activeCount = useMemo(() => plugins.filter((p) => p.enabled).length, [plugins]);
+
   return (
     <div className="space-y-6">
       <Card className="p-6 bg-card/50 backdrop-blur border-border/50">
@@ -95,26 +127,31 @@ export const PluginManager = () => {
             </p>
           </div>
           <Badge variant="outline">
-            {plugins.filter((p) => p.enabled).length} / {plugins.length} Active
+            {activeCount} / {plugins.length} Active
           </Badge>
         </div>
 
+        {loading && (
+          <div className="text-sm text-muted-foreground mb-3">Loading plugins…</div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {plugins.map((plugin) => {
-            const Icon = plugin.icon;
+            const Icon = categoryIcon[plugin.category];
+            const enabled = plugin.enabled ?? false;
             return (
               <Card
                 key={plugin.id}
                 className={`p-6 transition-all ${
-                  plugin.enabled
+                  enabled
                     ? "bg-primary/5 border-primary/20"
                     : "bg-card/50 border-border/50"
                 }`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${plugin.enabled ? "bg-primary/20" : "bg-secondary"}`}>
-                      <Icon className={`w-5 h-5 ${plugin.enabled ? "text-primary" : "text-muted-foreground"}`} />
+                    <div className={`p-2 rounded-lg ${enabled ? "bg-primary/20" : "bg-secondary"}`}>
+                      <Icon className={`w-5 h-5 ${enabled ? "text-primary" : "text-muted-foreground"}`} />
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{plugin.name}</h3>
@@ -129,14 +166,21 @@ export const PluginManager = () => {
                     </div>
                   </div>
                   <Switch
-                    checked={plugin.enabled}
+                    checked={enabled}
                     onCheckedChange={() => togglePlugin(plugin.id)}
                   />
                 </div>
-                <p className="text-sm text-muted-foreground">{plugin.description}</p>
+                <p className="text-sm text-muted-foreground">{plugin.description ?? "No description provided."}</p>
               </Card>
             );
           })}
+          {plugins.length === 0 && !loading && (
+            <Card className="p-6 bg-card/50 border-border/50">
+              <p className="text-sm text-muted-foreground">
+                No plugins found in database. Add entries to the "plugins" table to populate this list.
+              </p>
+            </Card>
+          )}
         </div>
       </Card>
 
@@ -148,7 +192,7 @@ export const PluginManager = () => {
         </div>
         <div className="space-y-2 text-sm text-muted-foreground">
           <p>
-            Plugins extend the agent's capabilities by providing specialized functions that can be called during task execution.
+            Plugins extend the agent&apos;s capabilities by providing specialized functions that can be called during task execution.
           </p>
           <p>
             Each plugin implements a standard interface with <code className="text-foreground bg-secondary px-1 py-0.5 rounded">register()</code> and{" "}
